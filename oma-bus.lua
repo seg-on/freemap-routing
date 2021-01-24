@@ -5,21 +5,12 @@ Set = require('lib/set')
 Sequence = require('lib/sequence')
 Handlers = require("lib/way_handlers")
 --Relations = require("lib/relations")
+require("handlers");
 
-function WayHandlers.train(profile,way,result,data, relations)
-	if not data.railway or data.railway =='' or data.railway == 'platform' then
-		return;
-	end
-	local service = way:get_value_by_key('service');
-	if service == 'siding' or service == 'yard' or service == 'spur' then return false; end
-	result.forward_speed=profile.default_speed; result.forward_rate=profile.default_speed;
-	result.backward_speed=profile.default_speed; result.backward_rate=profile.default_speed;
-	if way:get_value_by_key('usage') == 'main' then
-		result.forward_rate=result.forward_rate*2;
-		result.backward_rate=result.backward_rate*2;
-	end
+function WayHandlers.bus(profile,way,result,data, relations)
+    result.forward_speed=profile.default_speed; result.forward_rate=profile.default_speed;
+    result.backward_speed=profile.default_speed; result.backward_rate=profile.default_speed;
 end
-	
 
 
 function setup()
@@ -30,6 +21,12 @@ function setup()
     }, 
     default_mode = mode.driving,
     default_speed = 30,
+    oneway_handling = true,
+    restrictions = Sequence {
+      'motorcar',
+      'motor_vehicle',
+      'vehicle'
+    },
     classes = Sequence {
         'tram', 'train'
     },
@@ -44,16 +41,18 @@ end
 
 function process_way(profile, way, result, relations)
     local data = {
-		railway = way:get_value_by_key('railway'),
-    }
-
-	if ( not data.railway or data.railway =='') then
+		highway = way:get_value_by_key('highway'),
+		trolley = get_from_rel(relations, way, "route", 'trolleybus', "route"),
+		bus = get_from_rel(relations, way, "route", 'bus', "route"),
+	}
+	
+	if ( not data.bus ) and ( not data.trolley ) then
 		return false;
 	end
 	handlers = Sequence {
 		WayHandlers.default_mode,
 		WayHandlers.names,
-		WayHandlers.train,
+		WayHandlers.bus,
 		WayHandlers.oneway,
 --		WayHandlers.maxspeed,
 	}

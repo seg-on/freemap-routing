@@ -1,4 +1,8 @@
 <?php
+
+/* 
+ rm mapbox-gl*; wget https://api.tiles.mapbox.com/mapbox-gl-js/v0.45.0/mapbox-gl.js; wget https://api.tiles.mapbox.com/mapbox-gl-js/v0.45.0/mapbox-gl.css
+  */
 include('/home/izsk/weby/oma.sk/spolocne.php');
 include('maps.php');
 $typ = getcgi('profil','bike');
@@ -33,7 +37,7 @@ echo 'var simple = {
     "sources": {
         "osm": {
             "type": "vector",
-            "tiles": ["https://routing.epsilon.sk/tile/v1/'.$typ.'/tile({x},{y},{z}).mvt'.$exclude.'"]
+            "tiles": ["https://routing.freemap.sk/tile/v1/'.$typ.'/tile({x},{y},{z}).mvt'.$exclude.'"]
         }
     },
     "layers": [

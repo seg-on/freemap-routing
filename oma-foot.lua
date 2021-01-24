@@ -1,6 +1,6 @@
 -- Foot profile
 
-api_version = 2
+api_version = 4
 
 Set = require('lib/set')
 Sequence = require('lib/sequence')
@@ -24,38 +24,39 @@ function setup()
       use_turn_restrictions         = false,
       force_split_edges = true
     },
+raster_source = raster:load(
+      'srtm/central.asc',
+      30,    -- lon_min
+      30+36023*0.00083333335351199,  -- lon_max
+      0,    -- lat_min
+      36024*0.00083333335351199,  -- lat_max
+      36023,    -- nrows
+      36024     -- ncols
+),
 
     default_mode            = mode.walking,
     default_speed           = walking_speed,
     oneway_handling         = 'specific',     -- respect 'oneway:foot' but not 'oneway'
-    classes = Sequence {
-        'night', 'stroller', 'mud'
+    classes = Sequence { -- max 8, mud?
+        'night', 'stroller','unsafe','medium'
+	, 'red','green','blue','yellow'
     },
 
     excludable = Sequence {
         Set {'night'},
         Set {'stroller'},
-        Set {'mud'},
-		Set {'night', 'stroller'},Set {'night','stroller','mud'},
-		Set {'stroller','mud'}
+        Set {'unsafe'},
+        Set {'unsafe', 'medium'},
+		Set {'night', 'stroller'},
+		Set {'stroller','unsafe'},
+    },
+	relation_types = Sequence {
+      "route", "highway", "multipolygon"
     },
 
     unsafe_highway = Set { 'primary', 'primary_link', 'secondary', 'secondary_link', 'tertiary', 'tertiary_link', 'unclassified' },
     medium_highway = Set { 'residential', 'road', 'service' },
 
-    barrier_whitelist = Set {
-      'cycle_barrier',
-      'bollard',
-      'entrance',
-      'cattle_grid',
-      'border_control',
-      'toll_booth',
-      'sally_port',
-      'gate',
-      'no',
-      'kerb',
-      'block'
-    },
     barrier_blacklist = Set { 'yes', 'wall','fence'},
 
     access_tag_whitelist = Set {
@@ -71,8 +72,11 @@ function setup()
       'forestry',
       'private',
       'delivery',
+      'use_sidepath',
     },
-
+    service_access_tag_blacklist = Set {
+        'private'
+    },
     restricted_access_tag_list = Set { },
 
     restricted_highway_whitelist = Set { },
@@ -124,8 +128,8 @@ function setup()
       },
 
       amenity = {
-        parking         = walking_speed,
-        parking_entrance= walking_speed
+        --parking         = walking_speed,
+        --parking_entrance= walking_speed
       },
 
       man_made = {
@@ -169,7 +173,7 @@ function process_node(profile, node, result)
     end
   else
     local barrier = node:get_value_by_key("barrier")
-    if profile.barrier_blacklist[barrier] then
+    if barrier and profile.barrier_blacklist[barrier] then
         result.barrier = true
     end
   end
@@ -185,7 +189,7 @@ function process_node(profile, node, result)
 end
 
 -- main entry point for processsing a way
-function process_way(profile, way, result)
+function process_way(profile, way, result, relations)
   -- the intial filtering of ways based on presence of tags
   -- affects processing times significantly, because all ways
   -- have to be checked.
@@ -211,7 +215,9 @@ function process_way(profile, way, result)
     public_transport = way:get_value_by_key('public_transport')
   }
   -- relation only ways
-  if route_ways[way:id()] then data.highway = route_ways[way:id()]; end
+  if route_ways[way:id()] then
+	data.highway = route_ways[way:id()];
+  end
   -- perform an quick initial check and abort if the way is
   -- obviously not routable. here we require at least one
   -- of the prefetched tags to be present, ie. the data table
@@ -219,12 +225,14 @@ function process_way(profile, way, result)
   if next(data) == nil then     -- is the data table empty?
     return
   end
-
+  if data.highway == nil then
+	return
+  end
   local handlers = Sequence {
     -- set the default mode for this profile. if can be changed later
     -- in case it turns we're e.g. on a ferry
     WayHandlers.default_mode,
-
+    MyHandlers.platform,
     -- check various tags that could indicate that the way is not
     -- routable. this includes things like status=impassable,
     -- toll=yes and oneway=reversible
@@ -256,11 +264,14 @@ function process_way(profile, way, result)
     WayHandlers.startpoint,
 
     -- set name, ref and pronunciation
-    WayHandlers.footnames,
-    WayHandlers.footrate, 
-    WayHandlers.footclassnight,
-    WayHandlers.footclassstroller,
-    WayHandlers.footclassmud
+    MyHandlers.footnames,
+    MyHandlers.footrate,
+    MyHandlers.footclassnight,
+    MyHandlers.footclassstroller,
+    MyHandlers.footclasshiking,
+--    MyHandlers.footclassmud,
+    MyHandlers.classunsafe2,
+    MyHandlers.resetspeed
   }
 
   WayHandlers.run(profile,way,result,data,handlers)
@@ -269,7 +280,7 @@ end
 function process_turn (profile, turn)
   turn.duration = 0.
 
-  if turn.direction_modifier == direction_modifier.u_turn then
+  if turn.is_u_turn then
      turn.duration = turn.duration + profile.properties.u_turn_penalty
   end
 

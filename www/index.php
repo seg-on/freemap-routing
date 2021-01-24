@@ -14,7 +14,7 @@
 <?php
 include('maps.php');
 
-echo '<li>posledné OSM dáta sú z '.file_get_contents('last-mod-data').' (ale niektoré profily môžu byť spracované skôr), <a href="status.php">status servera</a>, dáta sú spracovné za SR a okolie</li>';
+echo '<li><a href="status.php">status servera</a>, dáta sú spracovné za SR a okolie, <a href="stats.php">štatistiky</a></li>';
 foreach($names as $k => $v) echo "<li>$k - $v".(is_array($classes[$k]) ? ' ('.implode($classes[$k], ', ').')':'').", posledné dáta z ".file_get_contents("last-mod-$k")."</li>\n";
 echo '</ul>
 <h2>Legenda debugu</h2><ul>
@@ -36,5 +36,6 @@ foreach($rate as $typ => $c) {
 ?>
 <li>speed: rýchlosť v km/h, na základe ktorej sa vypočítava čas dojazdu</li>
 <li>rate: "rýchlosť" zhruba v m/s, na základe ktorej sa vyhľadáva trasa (napr. na rušnej ceste je pre peších rate iná ako speed)</li>
+<li><a href="bikesharing.php">bikesharing</a></li>
 </ul>
 </body></html>

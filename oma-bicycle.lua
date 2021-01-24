@@ -1,14 +1,19 @@
 api_version = 1
+-- cat cut_n30e000.asc |grep -v n |grep -v cell |grep -v NO > central.asc 
 
 -- Bicycle profile
 local find_access_tag = require("lib/access").find_access_tag
 local Set = require('lib/set')
-local Sequence = require('lib/sequence')
-local Handlers = require("lib/handlers")
+Sequence = require('lib/sequence')
+Handlers = require("lib/handlers")
+aaa = require('bicycle_handlers');
+
 local next = next       -- bind to local for speed
 local limit = require("lib/maxspeed").limit
 require("segments-bicycle");
-require("route_rels")
+require("route_rels");
+--require("handlers");
+require("bicycle_handlers");
 
 -- these need to be global because they are accesed externaly
 properties.max_speed_for_map_matching    = 110/3.6 -- kmph -> m/s
@@ -17,6 +22,18 @@ properties.continue_straight_at_waypoint = false
 --properties.weight_name                   = 'duration'
 properties.weight_name                   = 'cyclability'
 properties.force_split_edges = true
+
+function source_function()
+ raster_source = sources:load(
+      'srtm/central.asc',
+      30,    -- lon_min
+      30+36023*0.00083333335351199,  -- lon_max
+      0,    -- lat_min
+      36024*0.00083333335351199,  -- lat_max
+      36023,    -- nrows
+      36024     -- ncols
+)
+end
 
 local default_speed = 17
 local walking_speed = 6
@@ -39,21 +56,7 @@ local profile = {
     mode.pushing_bike
   },
 
-  barrier_whitelist = Set {
-    'sump_buster',
-    'bus_trap',
-    'cycle_barrier',
-    'bollard',
-    'entrance',
-    'cattle_grid',
-    'border_control',
-    'toll_booth',
-    'sally_port',
-    'gate',
-    'no',
-    'block','kerb',
-    'swing gate'
-  },
+  barrier_blacklist = Set { 'yes', 'wall','fence'},
 
   access_tag_whitelist = Set {
   	'yes',
@@ -68,7 +71,9 @@ local profile = {
    	'forestry',
    	'delivery'
   },
-
+  service_access_tag_blacklist = Set {
+    'private'
+  },
   restricted_access_tag_list = Set { },
 
   restricted_highway_whitelist = Set { },
@@ -100,6 +105,17 @@ local profile = {
 	tertiary = 0.7, tertiary_link = 0.7, 
 	unclassified = 0.7 
   },
+  classes = Sequence {
+        'unsafe', 'medium', 'mud'
+    },
+
+    excludable = Sequence {
+        Set {'unsafe'},
+        Set {'medium'},
+        Set {'unsafe', 'medium'},
+        Set {'mud'}
+    },
+
 
   bicycle_speeds = {
     cycleway = default_speed,
@@ -216,10 +232,8 @@ function node_function (node, result)
     end
   else
     local barrier = node:get_value_by_key("barrier")
-    if barrier and "" ~= barrier then
-      if not profile.barrier_whitelist[barrier] then
-        result.barrier = true
-      end
+    if barrier and "" ~= barrier and profile.barrier_blacklist[barrier] then
+      result.barrier = true
     end
   end
 
@@ -289,10 +303,13 @@ function way_function (way, result)
   end
 
   -- access
-  local access = find_access_tag(way, profile.access_tags_hierarchy)
-  if access and profile.access_tag_blacklist[access] then
-    return
+  if bicycleaccess(profile,way) == false then
+	  return
   end
+  --local access = find_access_tag(way, profile.access_tags_hierarchy)
+  --if access and profile.access_tag_blacklist[access] then
+  --  return
+  --end
 
   -- other tags
   local junction = way:get_value_by_key("junction")
@@ -362,7 +379,9 @@ function way_function (way, result)
     -- essentially requires pedestrian profiling, for example foot=no mean we can't push a bike
     if foot ~= 'no' and (junction ~= "roundabout" and junction ~= "circular") then
 	  local width = tonumber(way:get_value_by_key("width"))
-	  if profile.pedestrian_speeds[data.highway] and width and width ~= "" and tonumber(width) >= 5 then
+	  if data.highway == 'steps' then
+		result.forward_speed = 2; result.backward_speed = 2
+	  elseif profile.pedestrian_speeds[data.highway] and width and width ~= "" and tonumber(width) >= 5 then
 		result.forward_speed = default_speed
         result.backward_speed = default_speed
       elseif profile.pedestrian_speeds[data.highway] then
@@ -393,8 +412,8 @@ function way_function (way, result)
       end
     end
   end
-
-  if way:get_value_by_key("segregated") == "yes" and bicycle and profile.access_tag_whitelist[bicycle] then
+  -- way:get_value_by_key("segregated") == "yes"
+  if bicycle and profile.access_tag_whitelist[bicycle] then
 	result.forward_speed = default_speed
     result.backward_speed = default_speed
     result.forward_mode = mode.cycling
@@ -477,7 +496,7 @@ function way_function (way, result)
   if result.forward_speed > 0 then
     -- convert from km/h to m/s
     result.forward_rate = result.forward_speed / 3.6;
-	if tonumber(maxspeed) >= 60 or lanes and tonumber(lanes) >= 2 or public_transport_ways[way:id()] then
+	if tonumber(maxspeed) >= 60 or tonumber(maxspeed) > 30 and tonumber(lanes) and tonumber(lanes) >= 2 or public_transport_ways[way:id()] then
 	  result.forward_rate = result.forward_rate * 0.5 end
     if profile.unsafe_highway[data.highway] then
       result.forward_rate = result.forward_rate * profile.unsafe_highway[data.highway]
@@ -486,13 +505,13 @@ function way_function (way, result)
   if result.backward_speed > 0 then
     -- convert from km/h to m/s
     result.backward_rate = result.backward_speed / 3.6;
-	if tonumber(maxspeed) >= 60 or lanes and tonumber(lanes) >= 2 or public_transport_ways[way:id()] then
+	if tonumber(maxspeed) >= 60 or tonumber(maxspeed) > 30 and tonumber(lanes) and tonumber(lanes) >= 2 or public_transport_ways[way:id()] then
 	  result.backward_rate = result.backward_rate * 0.5; end
     if profile.unsafe_highway[data.highway] then
       result.backward_rate = result.backward_rate * profile.unsafe_highway[data.highway]
     end
   end
-  if data.highway == 'cycleway' then 
+  if data.highway == 'cycleway' or (data.highway == 'path' or data.highway == 'footway') and bicycle=='designated' then
 	if way:get_value_by_key("segregated") == "no" then
      result.forward_rate = result.forward_rate*1.2
      result.backward_rate = result.backward_rate*1.2
@@ -536,7 +555,10 @@ function way_function (way, result)
     --'handle_startpoint',
 
     -- set name, ref and pronunciation
-    'handle_names'
+    'handle_names',
+--	MyHandlers.incline,
+
+--    'classunsafe', 'footclassmud'
   }
 
   Handlers.run(handlers,way,result,data,profile)
